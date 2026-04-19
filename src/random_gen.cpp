@@ -34,4 +34,23 @@ double MersenneTwisterGen::next_normal() {
     return u * factor;
 }
 
+AntitheticGen::AntitheticGen(RandomGen& inner)
+    : inner_(inner), has_partner_(false), partner_(0.0) {}
+
+double AntitheticGen::next_normal() {
+    if (has_partner_) {
+        has_partner_ = false;
+        return -partner_;
+    }
+    partner_ = inner_.next_normal();
+    has_partner_ = true;
+    return partner_;
+}
+
+void AntitheticGen::seed(std::uint64_t s) {
+    inner_.seed(s);
+    has_partner_ = false;
+    partner_ = 0.0;
+}
+
 } // namespace engine

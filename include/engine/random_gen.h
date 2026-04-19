@@ -24,5 +24,16 @@ private:
     double cached_;
 };
 
+class AntitheticGen : public RandomGen {
+public:
+    explicit AntitheticGen(RandomGen& inner);
+    double next_normal() override;
+    void seed(std::uint64_t s) override;
+private:
+    RandomGen& inner_;
+    bool has_partner_;
+    double partner_;
+};
+
 } // namespace engine
 #endif // ENGINE_RANDOM_GEN_H
