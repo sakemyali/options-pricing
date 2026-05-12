@@ -13,11 +13,15 @@ Cross-validated against Hull's *Options, Futures, and Other Derivatives*
 ```
 make           # builds build/pricing_engine
 make test      # builds and runs the Catch2 test suite
+make viz       # builds build/pricing_viz (native ImGui visualizer; needs glfw)
 make debug     # rebuild with -O0 -g + ASan/UBSan
 make clean
 ```
 
-Only dependency is Catch2, vendored in `third_party/`.
+Only build-time dependency for the engine + tests is Catch2, vendored in
+`third_party/`. The visualizer additionally needs Dear ImGui + implot
+(both vendored) and GLFW (system library, `brew install glfw` on macOS,
+`apt install libglfw3-dev` on Linux).
 
 ## CLI
 
@@ -67,9 +71,9 @@ Examples:
 
 ```
 include/engine/   public headers (one per component)
-src/              implementations + main.cpp dispatcher
+src/              implementations + main.cpp dispatcher + viz_main.cpp
 tests/            Catch2 tests (one file per component, plus integration)
-third_party/      vendored Catch2 amalgamated
+third_party/      vendored Catch2 amalgamated, Dear ImGui, implot
 ```
 
 Components:
@@ -99,6 +103,34 @@ Catch2 tag selector to skip:
 ```
 ./build/test_runner "~[.slow]" "~[.benchmark]"
 ```
+
+## Visualizer
+
+`make viz` builds `build/pricing_viz`, a native window (Dear ImGui + implot
++ GLFW + OpenGL 3.3) that re-prices the option in real time as you drag
+sliders for spot, strike, rate, vol, and expiry.
+
+```
+brew install glfw   # one-time, macOS
+make viz
+./build/pricing_viz
+```
+
+What's in the window:
+
+- Live readout of price + all five Greeks (analytical, recomputed every frame).
+- **Greeks vs spot** tab: price + each Greek plotted across `[0.25K, 1.75K]`,
+  with a marker at the current spot.
+- **Surface** tab: heatmap of the chosen metric (price or any Greek) as a
+  function of spot and time-to-expiry.
+- **Payoff at expiry** tab: intrinsic payoff diagram with a strike marker.
+- **MC convergence** tab: click "Run MC sweep" to launch the Monte Carlo
+  pricer at `N ∈ {1K, 10K, 100K, 1M}` for both plain and antithetic
+  variants and plot the resulting standard error against the theoretical
+  `1/sqrt(N)` reference line.
+
+Everything in the window calls the same engine library that the CLI uses —
+no duplication of pricing logic.
 
 ## Performance check
 
