@@ -99,23 +99,28 @@ else
     GUI_INCLUDES :=
 endif
 
-IMGUI_DIR  := third_party/imgui
-IMPLOT_DIR := third_party/implot
-IMGUI_INCLUDES := -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends -I$(IMPLOT_DIR)
+IMGUI_DIR    := third_party/imgui
+IMPLOT_DIR   := third_party/implot
+IMPLOT3D_DIR := third_party/implot3d
+IMGUI_INCLUDES := -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends -I$(IMPLOT_DIR) -I$(IMPLOT3D_DIR)
 
-IMGUI_SRC  := $(IMGUI_DIR)/imgui.cpp \
-              $(IMGUI_DIR)/imgui_draw.cpp \
-              $(IMGUI_DIR)/imgui_tables.cpp \
-              $(IMGUI_DIR)/imgui_widgets.cpp \
-              $(IMGUI_DIR)/imgui_demo.cpp \
-              $(IMGUI_DIR)/backends/imgui_impl_glfw.cpp \
-              $(IMGUI_DIR)/backends/imgui_impl_opengl3.cpp
-IMPLOT_SRC := $(IMPLOT_DIR)/implot.cpp \
-              $(IMPLOT_DIR)/implot_items.cpp
+IMGUI_SRC    := $(IMGUI_DIR)/imgui.cpp \
+                $(IMGUI_DIR)/imgui_draw.cpp \
+                $(IMGUI_DIR)/imgui_tables.cpp \
+                $(IMGUI_DIR)/imgui_widgets.cpp \
+                $(IMGUI_DIR)/imgui_demo.cpp \
+                $(IMGUI_DIR)/backends/imgui_impl_glfw.cpp \
+                $(IMGUI_DIR)/backends/imgui_impl_opengl3.cpp
+IMPLOT_SRC   := $(IMPLOT_DIR)/implot.cpp \
+                $(IMPLOT_DIR)/implot_items.cpp
+IMPLOT3D_SRC := $(IMPLOT3D_DIR)/implot3d.cpp \
+                $(IMPLOT3D_DIR)/implot3d_items.cpp \
+                $(IMPLOT3D_DIR)/implot3d_meshes.cpp
 
-IMGUI_OBJ  := $(patsubst third_party/%.cpp, $(BUILD_DIR)/third_party/%.o, $(IMGUI_SRC))
-IMPLOT_OBJ := $(patsubst third_party/%.cpp, $(BUILD_DIR)/third_party/%.o, $(IMPLOT_SRC))
-VIZ_OBJ    := $(BUILD_DIR)/viz_state.o $(BUILD_DIR)/viz_main.o
+IMGUI_OBJ    := $(patsubst third_party/%.cpp, $(BUILD_DIR)/third_party/%.o, $(IMGUI_SRC))
+IMPLOT_OBJ   := $(patsubst third_party/%.cpp, $(BUILD_DIR)/third_party/%.o, $(IMPLOT_SRC))
+IMPLOT3D_OBJ := $(patsubst third_party/%.cpp, $(BUILD_DIR)/third_party/%.o, $(IMPLOT3D_SRC))
+VIZ_OBJ      := $(BUILD_DIR)/viz_state.o $(BUILD_DIR)/viz_main.o
 
 # ImGui + implot translation units: relax warnings (their code is C-ish)
 $(BUILD_DIR)/third_party/imgui/%.o: third_party/imgui/%.cpp
@@ -126,6 +131,10 @@ $(BUILD_DIR)/third_party/implot/%.o: third_party/implot/%.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) -std=c++17 -O2 -Wno-unknown-warning-option -Wno-old-style-cast -Wno-conversion $(IMGUI_INCLUDES) $(GUI_INCLUDES) -c $< -o $@
 
+$(BUILD_DIR)/third_party/implot3d/%.o: third_party/implot3d/%.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) -std=c++17 -O2 -Wno-unknown-warning-option -Wno-old-style-cast -Wno-conversion -Wno-unused-but-set-variable $(IMGUI_INCLUDES) $(GUI_INCLUDES) -c $< -o $@
+
 # Our viz translation units need imgui/implot/glfw includes too
 $(BUILD_DIR)/viz_state.o: $(SRC_DIR)/viz_state.cpp | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(DEPFLAGS) $(INCLUDES) $(IMGUI_INCLUDES) $(GUI_INCLUDES) -c $< -o $@
@@ -135,7 +144,7 @@ $(BUILD_DIR)/viz_main.o: $(SRC_DIR)/viz_main.cpp | $(BUILD_DIR)
 
 viz: $(VIZ_BIN)
 
-$(VIZ_BIN): $(LIB_OBJ) $(VIZ_OBJ) $(IMGUI_OBJ) $(IMPLOT_OBJ) | $(BUILD_DIR)
+$(VIZ_BIN): $(LIB_OBJ) $(VIZ_OBJ) $(IMGUI_OBJ) $(IMPLOT_OBJ) $(IMPLOT3D_OBJ) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(GUI_LDFLAGS)
 
 -include $(DEPS)

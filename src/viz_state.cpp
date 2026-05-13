@@ -9,6 +9,7 @@
 
 #include "imgui.h"
 #include "implot.h"
+#include "implot3d.h"
 
 #include <algorithm>
 #include <cmath>
@@ -139,44 +140,101 @@ void draw_greeks_vs_spot(const engine::VizState& s) {
     subplot("rho",    rho);
 }
 
-void draw_surface(const engine::VizState& s) {
-    const char* metrics[] = {"price","delta","gamma","vega","theta","rho"};
-    int which = s.surface_metric;
-    ImGui::SetNextItemWidth(160);
-    if (ImGui::Combo("metric", &which, metrics, IM_ARRAYSIZE(metrics))) {
-        const_cast<engine::VizState&>(s).surface_metric = which;
-    }
+struct SurfaceGrid {
+    int N = 0;
+    float spot_lo = 0.0f, spot_hi = 0.0f;
+    float t_lo = 0.0f, t_hi = 0.0f;
+    std::vector<double> values;       // size N*N, indexed [row*N + col], row = T, col = S
+    double vmin = 0.0, vmax = 0.0;
+    const char* metric_name = "price";
+};
 
-    const int N = std::max(8, s.surface_n);
-    const float spot_lo = 0.5f * s.K, spot_hi = 1.5f * s.K;
-    const float t_lo = 0.01f, t_hi = std::max(0.05f, 2.0f * s.T);
+SurfaceGrid build_surface_grid(const engine::VizState& s) {
+    SurfaceGrid g;
+    g.N = std::max(8, s.surface_n);
+    g.spot_lo = 0.5f * s.K;
+    g.spot_hi = 1.5f * s.K;
+    g.t_lo = 0.01f;
+    g.t_hi = std::max(0.05f, 2.0f * s.T);
+    const char* metric_names[] = {"price","delta","gamma","vega","theta","rho"};
+    g.metric_name = metric_names[s.surface_metric];
 
-    std::vector<double> grid(N * N);
-    double vmin = 1e300, vmax = -1e300;
-    for (int j = 0; j < N; ++j) {            // rows = T axis
-        const float T = t_lo + (t_hi - t_lo) * (float)j / (float)(N - 1);
-        for (int i = 0; i < N; ++i) {        // cols = S axis
-            const float S = spot_lo + (spot_hi - spot_lo) * (float)i / (float)(N - 1);
-            const double v = greek_at(which, S, s.K, s.r, s.sigma, T, s.is_put);
-            grid[j * N + i] = v;
-            if (v < vmin) vmin = v;
-            if (v > vmax) vmax = v;
+    g.values.assign(g.N * g.N, 0.0);
+    g.vmin = 1e300; g.vmax = -1e300;
+    for (int j = 0; j < g.N; ++j) {
+        const float T = g.t_lo + (g.t_hi - g.t_lo) * (float)j / (float)(g.N - 1);
+        for (int i = 0; i < g.N; ++i) {
+            const float S = g.spot_lo + (g.spot_hi - g.spot_lo) * (float)i / (float)(g.N - 1);
+            const double v = greek_at(s.surface_metric, S, s.K, s.r, s.sigma, T, s.is_put);
+            g.values[j * g.N + i] = v;
+            if (v < g.vmin) g.vmin = v;
+            if (v > g.vmax) g.vmax = v;
         }
     }
+    return g;
+}
+
+void draw_surface_metric_combo(engine::VizState& s) {
+    const char* metrics[] = {"price","delta","gamma","vega","theta","rho"};
+    ImGui::SetNextItemWidth(160);
+    ImGui::Combo("metric", &s.surface_metric, metrics, IM_ARRAYSIZE(metrics));
+}
+
+void draw_surface(engine::VizState& s) {
+    draw_surface_metric_combo(s);
+    const SurfaceGrid g = build_surface_grid(s);
 
     ImPlot::PushColormap(ImPlotColormap_Plasma);
     if (ImPlot::BeginPlot("##surface", ImVec2(-1, -1))) {
         ImPlot::SetupAxes("Spot S", "Time T",
                           ImPlotAxisFlags_AutoFit, ImPlotAxisFlags_AutoFit);
-        ImPlot::PlotHeatmap("##h", grid.data(), N, N,
-                            vmin, vmax, nullptr,
-                            ImPlotPoint(spot_lo, t_lo),
-                            ImPlotPoint(spot_hi, t_hi));
+        ImPlot::PlotHeatmap("##h", g.values.data(), g.N, g.N,
+                            g.vmin, g.vmax, nullptr,
+                            ImPlotPoint(g.spot_lo, g.t_lo),
+                            ImPlotPoint(g.spot_hi, g.t_hi));
         ImPlot::EndPlot();
     }
     ImGui::SameLine();
-    ImPlot::ColormapScale("##scale", vmin, vmax, ImVec2(80, -1));
+    ImPlot::ColormapScale("##scale", g.vmin, g.vmax, ImVec2(80, -1));
     ImPlot::PopColormap();
+}
+
+void draw_surface_3d(engine::VizState& s) {
+    draw_surface_metric_combo(s);
+    ImGui::SameLine();
+    ImGui::TextDisabled("(drag to rotate, scroll to zoom)");
+
+    const SurfaceGrid g = build_surface_grid(s);
+
+    // ImPlot3D::PlotSurface wants three flat N*N arrays of equal length.
+    const int M = g.N * g.N;
+    std::vector<float> xs(M), ys(M), zs(M);
+    for (int j = 0; j < g.N; ++j) {
+        const float T = g.t_lo + (g.t_hi - g.t_lo) * (float)j / (float)(g.N - 1);
+        for (int i = 0; i < g.N; ++i) {
+            const float S = g.spot_lo + (g.spot_hi - g.spot_lo) * (float)i / (float)(g.N - 1);
+            const int idx = j * g.N + i;
+            xs[idx] = S;
+            ys[idx] = T;
+            zs[idx] = (float)g.values[idx];
+        }
+    }
+
+    ImPlot3D::PushColormap(ImPlot3DColormap_Plasma);
+    if (ImPlot3D::BeginPlot("##surface3d", ImVec2(-1, -1), ImPlot3DFlags_NoClip)) {
+        ImPlot3D::SetupAxes("Spot S", "Time T", g.metric_name);
+        ImPlot3D::SetupAxesLimits(g.spot_lo, g.spot_hi,
+                                  g.t_lo,    g.t_hi,
+                                  g.vmin,    g.vmax);
+        ImPlot3DSurfaceFlags flags = ImPlot3DSurfaceFlags_NoMarkers;
+        ImPlot3DSpec spec;
+        spec.Flags = flags;
+        spec.FillAlpha = 0.85f;
+        ImPlot3D::PlotSurface("surface", xs.data(), ys.data(), zs.data(),
+                              g.N, g.N, g.vmin, g.vmax, spec);
+        ImPlot3D::EndPlot();
+    }
+    ImPlot3D::PopColormap();
 }
 
 void draw_payoff(const engine::VizState& s) {
@@ -307,8 +365,12 @@ void draw_ui(VizState& state, McConvergenceData& mc) {
                 draw_greeks_vs_spot(state);
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("Surface (S x T)")) {
+            if (ImGui::BeginTabItem("Surface (heatmap)")) {
                 draw_surface(state);
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Surface (3D)")) {
+                draw_surface_3d(state);
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Payoff at expiry")) {
