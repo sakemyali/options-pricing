@@ -17,6 +17,8 @@ struct VizState {
     int surface_n   = 60;    // grid resolution for the heatmap
     int surface_metric = 0;  // 0 price, 1 delta, 2 gamma, 3 vega, 4 theta, 5 rho
 
+    bool reset_3d_camera = true;  // set to true to snap camera back to default angle on next frame
+
     int mc_paths_max = 1'000'000;
 };
 

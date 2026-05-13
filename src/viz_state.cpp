@@ -200,13 +200,21 @@ void draw_surface(engine::VizState& s) {
 }
 
 void draw_surface_3d(engine::VizState& s) {
+    // Top control row
     draw_surface_metric_combo(s);
+    ImGui::SameLine();
+    if (ImGui::Button("Reset view")) s.reset_3d_camera = true;
     ImGui::SameLine();
     ImGui::TextDisabled("(drag to rotate, scroll to zoom)");
 
     const SurfaceGrid g = build_surface_grid(s);
 
-    // ImPlot3D::PlotSurface wants three flat N*N arrays of equal length.
+    // Pad the z-range a bit so the surface sits comfortably inside the box
+    const double pad = 0.05 * std::max(1e-9, std::abs(g.vmax - g.vmin));
+    const double z_lo = g.vmin - pad;
+    const double z_hi = g.vmax + pad;
+
+    // ImPlot3D::PlotSurface wants three flat N*N arrays.
     const int M = g.N * g.N;
     std::vector<float> xs(M), ys(M), zs(M);
     for (int j = 0; j < g.N; ++j) {
@@ -220,21 +228,48 @@ void draw_surface_3d(engine::VizState& s) {
         }
     }
 
+    // Reserve space below the plot for the readout panel
+    const float readout_h = ImGui::GetTextLineHeightWithSpacing() * 6.0f + 16.0f;
+
     ImPlot3D::PushColormap(ImPlot3DColormap_Plasma);
-    if (ImPlot3D::BeginPlot("##surface3d", ImVec2(-1, -1), ImPlot3DFlags_NoClip)) {
+    if (ImPlot3D::BeginPlot("##surface3d", ImVec2(-1, -readout_h), ImPlot3DFlags_NoClip)) {
+        // Always re-fit the data into the box, otherwise the surface drifts out
+        // of the bounding cube whenever a slider changes the value range (e.g.
+        // moving sigma while the metric is rho swings the magnitudes a lot).
         ImPlot3D::SetupAxes("Spot S", "Time T", g.metric_name);
         ImPlot3D::SetupAxesLimits(g.spot_lo, g.spot_hi,
                                   g.t_lo,    g.t_hi,
-                                  g.vmin,    g.vmax);
-        ImPlot3DSurfaceFlags flags = ImPlot3DSurfaceFlags_NoMarkers;
+                                  z_lo,      z_hi,
+                                  ImPlot3DCond_Always);
+
+        // Camera rotation: only override when the user clicks "Reset view" (or first frame).
+        if (s.reset_3d_camera) {
+            ImPlot3D::SetupBoxRotation(25.0, 225.0, false, ImPlot3DCond_Always);
+            s.reset_3d_camera = false;
+        }
+
         ImPlot3DSpec spec;
-        spec.Flags = flags;
+        spec.Flags = ImPlot3DSurfaceFlags_NoMarkers;
         spec.FillAlpha = 0.85f;
         ImPlot3D::PlotSurface("surface", xs.data(), ys.data(), zs.data(),
                               g.N, g.N, g.vmin, g.vmax, spec);
         ImPlot3D::EndPlot();
     }
     ImPlot3D::PopColormap();
+
+    // ---------- numerical readout panel ----------
+    ImGui::Separator();
+    const double v_now = greek_at(s.surface_metric, s.S, s.K, s.r, s.sigma, s.T, s.is_put);
+    ImGui::Text("Metric : %-7s   Type: %-4s   Strike K = %.2f",
+                g.metric_name, s.is_put ? "Put" : "Call", s.K);
+    ImGui::Text("Current cursor (S=%.2f, T=%.4f, sigma=%.4f, r=%.4f)  -> %s = %.6f",
+                s.S, s.T, s.sigma, s.r, g.metric_name, v_now);
+    ImGui::Text("Surface range : %s in [%.6f, %.6f]   (delta = %.6f)",
+                g.metric_name, g.vmin, g.vmax, g.vmax - g.vmin);
+    ImGui::Text("Spot range    : [%.2f, %.2f]   (centred 0.5K..1.5K)",
+                g.spot_lo, g.spot_hi);
+    ImGui::Text("Time range    : [%.4f, %.4f]   (0.01..2T)",
+                g.t_lo, g.t_hi);
 }
 
 void draw_payoff(const engine::VizState& s) {
